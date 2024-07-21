@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+
+from httpx import AsyncClient, URL
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
+
+
+app = FastAPI()
+HTTP_SERVER = AsyncClient(base_url="https://nikhil-aryal.com.np/")
+
+
+async def _reverse_proxy(request: Request):
+    url = URL(path=request.url.path, query=request.url.query.encode("utf-8"))
+    headers = dict(request.headers)
+    headers['host'] = 'nikhil-aryal.com.np'
+    rp_req = HTTP_SERVER.build_request(
+        request.method, url, headers=headers, content=await request.body()
+    )
+    rp_resp = await HTTP_SERVER.send(rp_req, stream=True)
+    return StreamingResponse(
+        rp_resp.aiter_raw(),
+        status_code=rp_resp.status_code,
+        headers=rp_resp.headers,
+        background=BackgroundTask(rp_resp.aclose),
+    )
+
+
+app.add_route("/{path:path}", _reverse_proxy, ["TRACE", "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run('main:app', host='0.0.0.0', port=2580, reload=True)
